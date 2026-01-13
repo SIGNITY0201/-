@@ -1,1088 +1,1013 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  ChevronRight, 
-  CheckCircle, 
-  AlertTriangle, 
-  Calculator, 
-  Phone, 
-  Ruler, 
-  Sun, 
-  Zap,
-  Truck,
-  User,
-  Calendar,
-  Info,
-  ArrowRightFromLine,
-  ArrowUpToLine,
-  Construction,
-  Footprints,
-  HelpCircle,
-  Download,
-  X,
-  RotateCcw,
-  Lightbulb,
-  DoorOpen,
-  Hammer,
-  MousePointerClick,
-  Send,
-  RotateCw
-} from 'lucide-react';
-import { initializeApp } from "firebase/app";
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, addDoc, serverTimestamp } from "firebase/firestore";
-
-// ==================================================================================
-// [설정] EmailJS 키 설정
-// ==================================================================================
-const EMAILJS_SERVICE_ID = "service_r3nil9k";   
-const EMAILJS_TEMPLATE_ID = "template_2lqnkam"; 
-const EMAILJS_PUBLIC_KEY = "uqikvD1GCoxfF_h69";   
-
-// ==================================================================================
-// [설정] Firebase 초기화
-// ==================================================================================
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// ==================================================================================
-// [데이터] 가격표 설정 (2026 OASIS 판매단가표 - 부가세 별도 기준 반영)
-// ==================================================================================
-
-// 1. 수동(Manual) 가격표
-const oasisManualPriceTable = {
-    // Key: 돌출(Projection), Value: [1000, 1500, 2000, 2500, 3000, 3500, 4000] width 구간별 가격
-    2600: [3200000, 3400000, 3600000, 3800000, 4000000, 4200000, 4400000],
-    2775: [3240000, 3450000, 3660000, 3870000, 4080000, 4290000, 4500000],
-    2950: [3280000, 3500000, 3720000, 3940000, 4160000, 4380000, 4600000],
-    3125: [3320000, 3550000, 3780000, 4010000, 4240000, 4470000, 4700000],
-    3300: [3360000, 3600000, 3840000, 4080000, 4320000, 4560000, 4800000],
-    3475: [3400000, 3650000, 3900000, 4150000, 4400000, 4650000, 4900000],
-    3650: [3440000, 3700000, 3960000, 4220000, 4480000, 4740000, 5000000],
-    3825: [3480000, 3750000, 4020000, 4290000, 4560000, 4830000, 5100000],
-    4000: [3520000, 3800000, 4080000, 4360000, 4640000, 4920000, 5200000],
-    4175: [3560000, 3850000, 4140000, 4430000, 4720000, 5010000, 5300000],
-    4350: [3600000, 3900000, 4200000, 4500000, 4800000, 5100000, 5400000],
-    4525: [3640000, 3950000, 4260000, 4570000, 4880000, 5190000, 5500000],
-    4700: [3680000, 4000000, 4320000, 4640000, 4960000, 5280000, 5600000],
-    4875: [3720000, 4050000, 4380000, 4710000, 5040000, 5370000, 5700000],
-    5050: [3760000, 4100000, 4440000, 4780000, 5120000, 5460000, 5800000],
-    5225: [3800000, 4150000, 4500000, 4850000, 5200000, 5550000, 5900000],
-    5400: [3840000, 4200000, 4560000, 4920000, 5280000, 5640000, 6000000],
-    5575: [3880000, 4250000, 4620000, 4990000, 5360000, 5730000, 6100000],
-    5750: [3920000, 4300000, 4680000, 5060000, 5440000, 5820000, 6200000],
-    5925: [3960000, 4350000, 4740000, 5130000, 5520000, 5910000, 6300000]
-};
-
-// 2. 전동(Electric) 가격표
-const oasisElectricPriceTable = {
-    // Key: 돌출(Projection), Value: [1000, 1500, 2000, 2500, 3000, 3500, 4000] width 구간별 가격
-    2600: [3600000, 3850000, 4100000, 4350000, 4600000, 4850000, 5100000],
-    2775: [3640000, 3900000, 4160000, 4420000, 4680000, 4940000, 5200000],
-    2950: [3680000, 3950000, 4220000, 4490000, 4760000, 5030000, 5300000],
-    3125: [3720000, 4000000, 4280000, 4560000, 4840000, 5120000, 5400000],
-    3300: [3760000, 4050000, 4340000, 4630000, 4920000, 5210000, 5500000],
-    3475: [3800000, 4100000, 4400000, 4700000, 5000000, 5300000, 5600000],
-    3650: [3840000, 4150000, 4460000, 4770000, 5080000, 5390000, 5700000],
-    3825: [3880000, 4200000, 4520000, 4840000, 5160000, 5480000, 5800000],
-    4000: [3920000, 4250000, 4580000, 4910000, 5240000, 5570000, 5900000],
-    4175: [3960000, 4300000, 4640000, 4980000, 5320000, 5660000, 6000000],
-    4350: [4000000, 4350000, 4700000, 5050000, 5400000, 5750000, 6100000],
-    4525: [4040000, 4400000, 4760000, 5120000, 5480000, 5840000, 6200000],
-    4700: [4080000, 4450000, 4820000, 5190000, 5560000, 5930000, 6300000],
-    4875: [4120000, 4500000, 4880000, 5260000, 5640000, 6020000, 6400000],
-    5050: [4160000, 4550000, 4940000, 5330000, 5720000, 6110000, 6500000],
-    5225: [4200000, 4600000, 5000000, 5400000, 5800000, 6200000, 6600000],
-    5400: [4240000, 4650000, 5060000, 5470000, 5880000, 6290000, 6700000],
-    5575: [4280000, 4700000, 5120000, 5540000, 5960000, 6380000, 6800000],
-    5750: [4320000, 4750000, 5180000, 5610000, 6040000, 6470000, 6900000],
-    5925: [4360000, 4800000, 5240000, 5680000, 6120000, 6560000, 7000000]
-};
-
-// [지역 데이터]
-const regions = {
-    '서울특별시': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구', '종로구', '중구', '중랑구'],
-    '부산광역시': ['강서구', '금정구', '기장군', '남구', '동구', '동래구', '부산진구', '북구', '사상구', '사하구', '서구', '수영구', '연제구', '영도구', '중구', '해운대구'],
-    '대구광역시': ['군위군', '남구', '달서구', '달성군', '동구', '북구', '서구', '수성구', '중구'],
-    '인천광역시': ['강화군', '계양구', '남동구', '동구', '미추홀구', '부평구', '서구', '연수구', '옹진군', '중구'],
-    '광주광역시': ['광산구', '남구', '동구', '북구', '서구'],
-    '대전광역시': ['대덕구', '동구', '서구', '유성구', '중구'],
-    '울산광역시': ['남구', '동구', '북구', '울주군', '중구'],
-    '세종특별자치시': ['세종시'],
-    '경기도': ['가평군', '고양시', '과천시', '광명시', '광주시', '구리시', '군포시', '김포시', '남양주시', '동두천시', '부천시', '성남시', '수원시', '시흥시', '안산시', '안성시', '안양시', '양주시', '양평군', '여주시', '연천군', '오산시', '용인시', '의왕시', '의정부시', '이천시', '파주시', '평택시', '포천시', '하남시', '화성시'],
-    '강원특별자치도': ['강릉시', '고성군', '동해시', '삼척시', '속초시', '양구군', '양양군', '영월군', '원주시', '인제군', '정선군', '철원군', '춘천시', '태백시', '평창군', '홍천군', '화천군', '횡성군'],
-    '충청북도': ['괴산군', '단양군', '보은군', '영동군', '옥천군', '음성군', '제천시', '증평군', '진천군', '청주시', '충주시'],
-    '충청남도': ['계룡시', '공주시', '금산군', '논산시', '당진시', '보령시', '부여군', '서산시', '서천군', '아산시', '예산군', '천안시', '청양군', '태안군', '홍성군'],
-    '전북특별자치도': ['고창군', '군산시', '김제시', '남원시', '무주군', '부안군', '순창군', '완주군', '익산시', '임실군', '장수군', '전주시', '정읍시', '진안군'],
-    '전라남도': ['강진군', '고흥군', '곡성군', '광양시', '구례군', '나주시', '담양군', '목포시', '무안군', '보성군', '순천시', '신안군', '여수시', '영광군', '영암군', '완도군', '장성군', '장흥군', '진도군', '함평군', '해남군', '화순군'],
-    '경상북도': ['경산시', '경주시', '고령군', '구미시', '김천시', '문경시', '봉화군', '상주시', '성주군', '안동시', '영덕군', '영양군', '영주시', '영천시', '예천군', '울릉군', '울진군', '의성군', '청도군', '청송군', '칠곡군', '포항시'],
-    '경상남도': ['거제시', '거창군', '고성군', '김해시', '남해군', '밀양시', '사천시', '산청군', '양산시', '의령군', '진주시', '창녕군', '창원시', '통영시', '하동군', '함안군', '함양군', '합천군'],
-    '제주특별자치도': ['서귀포시', '제주시']
-};
-
-// --- Sub-Components ---
-
-const Step1_BasicInfo = ({ formData, setFormData, setErrorMsg, handleRegionDoChange }) => (
-  <div className="space-y-6">
-    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-      <Phone className="w-6 h-6 text-tc-olive" />
-      기본 정보 입력
-    </h2>
-    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r">
-      <div className="flex items-start">
-        <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
-        <p className="text-sm text-yellow-700 font-bold">
-          안내: 타인의 전화번호를 도용하여 견적을 산출할 경우 법적인 책임이 따를 수 있습니다. 반드시 본인의 휴대전화 번호를 입력해주세요.
-        </p>
-      </div>
-    </div>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERRACASA 견적 시스템</title>
     
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">휴대폰 번호</label>
-      <input 
-        type="tel" 
-        name="phone"
-        value={formData.phone}
-        onChange={(e) => {
-          let val = e.target.value.replace(/[^0-9]/g, '');
-          if (val.length > 3 && val.length <= 7) val = val.slice(0,3) + '-' + val.slice(3);
-          else if (val.length > 7) val = val.slice(0,3) + '-' + val.slice(3,7) + '-' + val.slice(7, 11);
-          setFormData(prev => ({ ...prev, phone: val }));
-          setErrorMsg("");
-        }}
-        placeholder="010-0000-0000"
-        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive focus:border-transparent outline-none transition"
-        maxLength={13}
-      />
-    </div>
-
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">시/도</label>
-        <select 
-          name="regionDo" 
-          value={formData.regionDo}
-          onChange={handleRegionDoChange}
-          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white"
-        >
-          <option value="">선택</option>
-          {Object.keys(regions).map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">시/군/구</label>
-        <select 
-          name="regionSi" 
-          value={formData.regionSi}
-          onChange={(e) => setFormData(prev => ({...prev, regionSi: e.target.value}))}
-          disabled={!formData.regionDo}
-          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white disabled:bg-gray-100"
-        >
-          <option value="">선택</option>
-          {formData.regionDo && regions[formData.regionDo].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-    </div>
-  </div>
-);
-
-const Step2_UserType = ({ formData, handleAutoNext, errorMsg }) => (
-  <div className="space-y-6">
-    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-      <User className="w-6 h-6 text-tc-olive" />
-      고객 구분
-    </h2>
-    <p className="text-sm text-gray-500">정확한 상담 배정을 위해 고객 유형을 선택해주세요.</p>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {['개인 고객', '인테리어 업체', '조경 업체', '건축/설계사', '관공서/기업'].map(type => (
-        <button
-          key={type}
-          onClick={() => handleAutoNext('userType', type)}
-          className={`p-4 rounded-xl border-2 text-left transition-all ${
-            formData.userType === type 
-            ? 'border-tc-olive bg-green-50 text-tc-olive font-bold shadow-md' 
-            : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'
-          }`}
-        >
-          {type}
-        </button>
-      ))}
-    </div>
-    {errorMsg && <p className="text-red-500 font-bold text-center animate-pulse">{errorMsg}</p>}
-  </div>
-);
-
-const Step3_Timeline = ({ formData, handleAutoNext, errorMsg }) => (
-  <div className="space-y-6">
-    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-      <Calendar className="w-6 h-6 text-tc-olive" />
-      시공 예정 시기
-    </h2>
-    <div className="grid grid-cols-1 gap-3">
-      {[
-        { label: '1개월 이내 (긴급)', val: 'urgent' },
-        { label: '3개월 이내 (보통)', val: 'normal' },
-        { label: '6개월 이내 (여유)', val: 'relaxed' },
-        { label: '6개월 이후 / 계획단계', val: 'planning' }
-      ].map(item => (
-        <button
-          key={item.val}
-          onClick={() => handleAutoNext('timeline', item.val)}
-          className={`p-4 rounded-xl border-2 text-left transition-all ${
-            formData.timeline === item.val 
-            ? 'border-tc-olive bg-green-50 text-tc-olive font-bold shadow-md' 
-            : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'
-          }`}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-    {errorMsg && <p className="text-red-500 font-bold text-center animate-pulse">{errorMsg}</p>}
-  </div>
-);
-
-const Step4_Lifting = ({ formData, handleAutoNext, errorMsg }) => {
-  const liftingOptions = [
-    { label: '즉시 진입 가능', desc: '1층 / 화물차 하차 후 즉시 진입', val: 'direct_entry', icon: <ArrowRightFromLine className="w-8 h-8"/> },
-    { label: '사다리차 사용', desc: '1층 이상 / 진입로 협소', val: 'ladder', icon: <ArrowUpToLine className="w-8 h-8"/> },
-    { label: '크레인 사용', desc: '고층 / 대형 장비 필요', val: 'crane', icon: <Construction className="w-8 h-8"/> },
-    { label: '자재 소운반 (20m+)', desc: '하차 후 20m 이상 인력 운반', val: 'long_carry', icon: <Footprints className="w-8 h-8"/> },
-    { label: '잘 모르겠음', desc: '현장 확인 필요', val: 'unknown', icon: <HelpCircle className="w-8 h-8 text-gray-400"/> }
-  ];
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-        <Truck className="w-6 h-6 text-tc-olive" />
-        자재 반입 환경 (양중)
-      </h2>
-      <p className="text-sm text-gray-500">설치 장소로 자재를 옮길 수 있는 가장 유사한 방법을 선택해주세요.</p>
-      <div className="grid grid-cols-1 gap-3">
-        {liftingOptions.map(item => (
-          <button
-            key={item.val}
-            onClick={() => handleAutoNext('liftingType', item.val)}
-            className={`p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 group ${
-              formData.liftingType === item.val 
-              ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' 
-              : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'
-            }`}
-          >
-            <div className={`flex-shrink-0 p-2 rounded-full border border-gray-100 shadow-sm transition-colors ${
-              formData.liftingType === item.val ? 'bg-white text-tc-olive' : 'bg-gray-50 text-gray-400 group-hover:text-tc-olive'
-            }`}>
-              {item.icon}
-            </div>
-            <div>
-              <div className={`font-bold text-lg ${formData.liftingType === item.val ? 'text-tc-olive' : 'text-gray-800'}`}>
-                {item.label}
-              </div>
-              <div className="text-sm text-gray-500">{item.desc}</div>
-            </div>
-          </button>
-        ))}
-      </div>
-      {errorMsg && <p className="text-red-500 font-bold text-center animate-pulse">{errorMsg}</p>}
-    </div>
-  );
-};
-
-const Step5_Specs = ({ formData, setFormData, handleChange }) => (
-  <div className="space-y-6">
-    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-      <Ruler className="w-6 h-6 text-tc-olive" />
-      제품 사양 및 사이즈
-    </h2>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    {/* Operation Type */}
-    <div className="grid grid-cols-2 gap-4">
-      <div 
-        onClick={() => setFormData(prev => ({...prev, operationType: 'manual'}))}
-        className={`cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden ${formData.operationType === 'manual' ? 'border-tc-olive bg-green-50 ring-2 ring-tc-olive ring-opacity-50' : 'border-gray-200 hover:border-gray-300'}`}
-      >
-        <div className="absolute top-0 right-0 p-2 opacity-10">
-            <Sun className="w-24 h-24" />
-        </div>
-        <div className="flex justify-between items-center mb-2 relative z-10">
-          <span className="font-bold text-lg">수동 (Manual)</span>
-          <Sun className="w-6 h-6 text-orange-400" />
-        </div>
-        <ul className="text-xs text-gray-600 space-y-1 relative z-10">
-          <li className="text-blue-600 font-semibold">✔ 경제적인 가격</li>
-          <li>✖ LED 옵션 설치 어려움</li>
-          <li>✖ 글라스 도어 설치 제한</li>
-        </ul>
-      </div>
-      <div 
-        onClick={() => setFormData(prev => ({...prev, operationType: 'electric'}))}
-        className={`cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden ${formData.operationType === 'electric' ? 'border-tc-olive bg-green-50 ring-2 ring-tc-olive ring-opacity-50' : 'border-gray-200 hover:border-gray-300'}`}
-      >
-        <div className="absolute top-0 right-0 p-2 opacity-10">
-            <Zap className="w-24 h-24" />
-        </div>
-        <div className="flex justify-between items-center mb-2 relative z-10">
-          <span className="font-bold text-lg text-tc-olive">전동 (Electric)</span>
-          <Zap className="w-6 h-6 text-yellow-500" />
-        </div>
-        <ul className="text-xs text-gray-600 space-y-1 relative z-10">
-          <li>✔ 리모컨 작동 편리함</li>
-          <li className="text-blue-600 font-semibold">✔ LED 조명 옵션 가능</li>
-          <li className="text-blue-600 font-semibold">✔ 글라스 도어 호환 우수</li>
-        </ul>
-      </div>
-    </div>
-
-    {/* Dimensions */}
-    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-      <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-        <MousePointerClick className="w-5 h-5 text-tc-olive"/>
-        설치 공간 사이즈 (단위: 미터 m)
-      </h3>
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-2 ml-1">가로 (Width)</label>
-          <div className="relative">
-            <input 
-              type="number" 
-              name="width"
-              value={formData.width}
-              onChange={handleChange}
-              placeholder="예: 4"
-              className="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm"
-              step="0.1"
-            />
-            <span className="absolute right-4 top-5 text-gray-400 font-bold">m</span>
-          </div>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-2 ml-1">세로/돌출 (Projection)</label>
-          <div className="relative">
-            <input 
-              type="number" 
-              name="projection"
-              value={formData.projection}
-              onChange={handleChange}
-              placeholder="예: 3"
-              className="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm"
-              step="0.1"
-            />
-            <span className="absolute right-4 top-5 text-gray-400 font-bold">m</span>
-          </div>
-        </div>
-      </div>
-      
-      {/* Friendly Note */}
-      <div className="bg-blue-50 p-4 rounded-xl flex items-start gap-3 text-blue-800">
-        <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div className="text-sm leading-relaxed">
-            <span className="font-bold block mb-1">💡 부담 갖지 말고 작성해주세요!</span>
-            현장에서 직접 줄자로 잰 대략적인 수치만 적어주시면 됩니다. 
-            정확한 mm단위 실측은 계약 후 <span className="font-bold underline">시공대표님이 방문하여 꼼꼼하게 진행</span>해 드립니다.
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-const Step6_Options = ({ formData, setFormData, handleChange, errorMsg }) => (
-  <div className="space-y-6">
-    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-      <CheckCircle className="w-6 h-6 text-tc-olive" />
-      추가 옵션 선택
-    </h2>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     
-    <div className="grid grid-cols-1 gap-4">
-        {/* LED Option Card */}
-        <label className={`relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-            formData.optionLed ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-gray-200 hover:border-gray-300'
-        }`}>
-            <div className="flex-shrink-0 mt-1">
-                <input 
-                    type="checkbox" 
-                    checked={formData.optionLed}
-                    onChange={(e) => setFormData(prev => ({...prev, optionLed: e.target.checked}))}
-                    className="w-5 h-5 accent-tc-olive"
-                />
-            </div>
-            <div className="flex-1">
-                <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-gray-800 text-lg">LED 조명 추가</span>
-                    <Lightbulb className={`w-6 h-6 ${formData.optionLed ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}`} />
-                </div>
-                <p className="text-sm text-gray-500">야간에도 분위기 있는 테라스를 즐겨보세요.</p>
-                {formData.operationType === 'manual' && formData.optionLed && (
-                    <p className="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded font-bold">
-                    ⚠️ 수동 모델은 LED 설치 시 별도 배선 비용이 크게 발생합니다. (전동 추천)
-                    </p>
-                )}
-            </div>
-        </label>
+    <!-- EmailJS SDK -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
-        {/* Glass Option Card */}
-        <div className={`p-4 rounded-xl border-2 transition-all ${
-            formData.optionGlass !== '' ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-red-300 bg-red-50'
-        }`}>
-            <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center gap-2">
-                    <DoorOpen className={`w-6 h-6 ${formData.optionGlass !== '' ? 'text-blue-500' : 'text-red-400'}`} />
-                    <span className="font-bold text-gray-800 text-lg">글라스 도어 (폴딩/슬라이딩)</span>
-                </div>
-                {formData.optionGlass === '' && <span className="text-xs text-red-500 font-bold animate-pulse">❗필수 선택</span>}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-                {[
-                    { val: 'none', label: '설치 안함' },
-                    { val: 'with', label: '함께 시공 (추천)' },
-                    { val: 'later', label: '추후 예정' }
-                ].map(opt => (
-                    <button
-                        key={opt.val}
-                        onClick={() => handleChange({ target: { name: 'optionGlass', value: opt.val } })}
-                        className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                            formData.optionGlass === opt.val 
-                            ? 'bg-tc-olive text-white shadow-md' 
-                            : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
-                        }`}
-                    >
-                        {opt.label}
-                    </button>
-                ))}
-            </div>
-            {formData.operationType === 'manual' && formData.optionGlass !== '' && formData.optionGlass !== 'none' && (
-                <p className="mt-3 text-xs text-orange-600 bg-orange-50 p-2 rounded font-bold">
-                💡 수동 핸들 간섭으로 인해 글라스 도어 설치가 제한될 수 있습니다.
-                </p>
-            )}
-        </div>
-
-        {/* Deck Option Card */}
-        <label className={`relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-            formData.optionDeck ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-gray-200 hover:border-gray-300'
-        }`}>
-            <div className="flex-shrink-0 mt-1">
-                <input 
-                    type="checkbox" 
-                    checked={formData.optionDeck}
-                    onChange={(e) => setFormData(prev => ({...prev, optionDeck: e.target.checked}))}
-                    className="w-5 h-5 accent-tc-olive"
-                />
-            </div>
-            <div className="flex-1">
-                <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-gray-800 text-lg">바닥 데크 시공 의뢰</span>
-                    <Hammer className={`w-6 h-6 ${formData.optionDeck ? 'text-brown-500' : 'text-gray-300'}`} />
-                </div>
-                <p className="text-sm text-gray-500">합성목재 또는 방부목 데크 시공 견적도 함께 받아봅니다.</p>
-            </div>
-        </label>
-    </div>
-
-    {errorMsg && <div className="p-3 bg-red-100 text-red-600 rounded-lg text-center font-bold animate-pulse">{errorMsg}</div>}
-
-    <div className="pt-4">
-      <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded">
-        <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-        <p>
-          '견적 확인하기'를 누르시면 
-          <span className="font-bold text-gray-700"> 개인정보 수집 및 마케팅 활용</span>에 동의하는 것으로 간주되며, 
-          입력하신 정보가 테라까사 담당자에게 안전하게 전송됩니다.
-        </p>
-      </div>
-    </div>
-  </div>
-);
-
-const ResultModal = ({ result, formData, onClose, onReset, onPrint }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm print:absolute print:inset-0 print:bg-white print:p-0 print:z-[99999]">
-    <div id="print-area" className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto print:max-w-none print:shadow-none print:max-h-none print:rounded-none print:w-full print:h-full">
-      <div className="bg-tc-olive p-6 text-white text-center print:bg-white print:text-black print:border-b-2 print:border-black">
-        <h2 className="text-3xl font-black mb-1 print:text-black tracking-tight">TERRACASA</h2>
-        <p className="text-sm opacity-90 print:text-gray-600 font-medium">SMART QUOTATION SYSTEM</p>
-      </div>
-      
-      <div className="p-6 space-y-6">
-        <div className="text-center border-b pb-6 border-gray-100 print:border-black">
-          <p className="text-sm text-gray-500 mb-1">총 예상 견적가 (VAT 별도)</p>
-          <p className="text-4xl font-black text-gray-800 tracking-tight print:text-black">
-            {Math.round(result.totalPrice / 10000) * 10000 < result.totalPrice 
-             ? (Math.round(result.totalPrice / 10000) * 10000).toLocaleString() 
-             : result.totalPrice.toLocaleString()}
-            <span className="text-xl font-normal text-gray-500 ml-1">원~</span>
-          </p>
-        </div>
-
-        {result.isSwapped && (
-            <div className="bg-green-50 p-4 rounded-xl border border-green-200 text-sm text-green-800 mb-4 flex items-start gap-2">
-                <RotateCw className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600" />
-                <div>
-                    <span className="font-bold">가로/세로 방향 자동 최적화 적용됨</span>
-                    <p className="mt-1">
-                        입력하신 사이즈({formData.width}m x {formData.projection}m)보다 
-                        <span className="font-bold underline"> 방향을 변경하여 시공({formData.projection}m x {formData.width}m)</span>하는 것이 
-                        더 경제적이라 시스템이 자동으로 최적 견적을 산출했습니다.
-                    </p>
-                </div>
-            </div>
-        )}
-
-        {result.splitInfo && (
-          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800 print:border-gray-300 print:bg-white print:text-black">
-            <p className="font-bold mb-1 flex items-center gap-1">
-              <Info className="w-4 h-4"/> 사이즈 자동 분할 안내
-            </p>
-            <div className="mb-2">{result.splitInfo}</div>
-            <div className="text-xs text-blue-600 bg-white/50 p-2 rounded-lg border border-blue-100">
-               ※ 사이즈 자동 분할은 시스템 권장사항이며, <strong>담당자 상담을 통해 최소 금액으로 진행</strong>할 수 있도록 안내해 드릴 예정입니다.
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between border-b pb-2">
-            <span className="text-gray-500">고객명 / 연락처</span>
-            <span className="font-bold">{formData.phone}</span>
-          </div>
-          <div className="flex justify-between border-b pb-2">
-            <span className="text-gray-500">설치 지역</span>
-            <span className="font-bold">{formData.regionDo} {formData.regionSi}</span>
-          </div>
-          <div className="flex justify-between border-b pb-2">
-            <span className="text-gray-500">선택 모델</span>
-            <span className="font-bold text-tc-olive">{formData.operationType === 'manual' ? 'OASIS 수동' : 'OASIS 전동'}</span>
-          </div>
-          <div className="flex justify-between border-b pb-2">
-            <span className="text-gray-500">제품 규격 {result.isSwapped && '(최적화됨)'}</span>
-            <span className="font-bold">{result.breakdown.unitW} x {result.breakdown.unitP} (mm)</span>
-          </div>
-          <div className="flex justify-between border-b pb-2">
-            <span className="text-gray-500">수량</span>
-            <span className="font-bold">{result.breakdown.totalUnits} Set</span>
-          </div>
-          
-          {result.breakdown.options.map((opt, idx) => (
-            <div key={idx} className="flex justify-between border-b pb-2 text-gray-600">
-              <span>+ {opt.name}</span>
-              <span>{opt.cost > 0 ? `₩ ${opt.cost.toLocaleString()}` : opt.note}</span>
-            </div>
-          ))}
-          
-          <div className="flex justify-between border-b pb-2 text-gray-600">
-            <span>+ 기본 시공/운임비</span>
-            <span>₩ {(result.breakdown.labor + result.breakdown.freight).toLocaleString()}</span>
-          </div>
-        </div>
-
-        <div className="bg-gray-50 p-4 rounded-xl text-xs text-gray-500 space-y-1 print:bg-white print:border print:border-gray-200">
-           <p className="font-bold text-gray-700 mb-1">※ 유의사항</p>
-           <p>1. 자동견적 프로그램에 지역별 출장비는 반영되어있지 않습니다.</p>
-           <p>2. 운임의 경우 제품의 개소에 따라 추가 부과 될 수 있습니다.</p>
-           <p>• 위 금액은 가견적이며 현장 상황에 따라 변동될 수 있습니다.</p>
-           <p>• 정확한 견적을 위해 담당자가 3일 이내로 연락드릴 예정입니다.</p>
-           <p>• 글라스 도어 및 데크 시공비는 현장 실측 후 정확히 산출됩니다.</p>
-        </div>
-
-        {/* Buttons (Hidden when printing) */}
-        <div className="grid grid-cols-3 gap-2 print:hidden pt-4">
-          <button 
-            onClick={onClose}
-            className="flex flex-col items-center justify-center p-3 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-          >
-            <RotateCcw className="w-5 h-5 mb-1 rotate-90"/>
-            <span className="text-xs font-bold">이전으로</span>
-          </button>
-          
-          <button 
-            onClick={onReset}
-            className="flex flex-col items-center justify-center p-3 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-          >
-            <X className="w-5 h-5 mb-1"/>
-            <span className="text-xs font-bold">종료하기</span>
-          </button>
-          
-          <button 
-            type="button"
-            onClick={onPrint}
-            className="flex flex-col items-center justify-center p-3 rounded-xl bg-tc-olive text-white hover:bg-green-800 transition shadow-lg"
-          >
-            <Download className="w-5 h-5 mb-1"/>
-            <span className="text-xs font-bold">견적서 저장</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-// --- Main Component ---
-
-export default function TerracasaSelfQuote() {
-  const [user, setUser] = useState(null);
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [result, setResult] = useState(null);
-  
-  // EmailJS 준비 상태 확인용
-  const [emailJsReady, setEmailJsReady] = useState(false);
-
-  // --- Form State ---
-  const [formData, setFormData] = useState({
-    phone: '',
-    regionDo: '',
-    regionSi: '',
-    userType: '',
-    timeline: '',
-    liftingType: '',
-    operationType: '',
-    width: '', // Meters
-    projection: '', // Meters
-    height: '3000',
-    measurementNeed: 'approx',
-    optionLed: false,
-    optionGlass: '', // Default empty (Required)
-    optionDeck: false,
-  });
-
-  // --- Auth & EmailJS Init ---
-  useEffect(() => {
-    // 1. Load EmailJS SDK Dynamically
-    const script = document.createElement('script');
-    script.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
-    script.async = true;
-    script.onload = () => {
-      // Initialize EmailJS once script is loaded
-      if (window.emailjs) {
-        window.emailjs.init({
-          publicKey: EMAILJS_PUBLIC_KEY,
-        });
-        setEmailJsReady(true);
-        console.log("EmailJS SDK Loaded Successfully");
-      }
-    };
-    script.onerror = () => {
-        console.error("Failed to load EmailJS SDK");
-    };
-    document.body.appendChild(script);
-
-    // 2. Firebase Auth (Backup)
-    const initAuth = async () => {
-      try {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-            await signInAnonymously(auth);
-          }
-      } catch (e) {
-          console.log("Auth init skipped or failed (EmailJS will still work)", e);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    
-    // Cleanup script on unmount
-    return () => {
-      unsubscribe();
-      if(document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-    };
-  }, []);
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-    setErrorMsg("");
-  };
-
-  const handleRegionDoChange = (e) => {
-    const val = e.target.value; 
-    setFormData(prev => ({ ...prev, regionDo: val, regionSi: '' }));
-  };
-  
-  // Auto-advance helper with validation hook
-  const handleAutoNext = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setErrorMsg("");
-    setTimeout(() => {
-        setStep(prev => prev + 1);
-    }, 250); // Slight delay for visual feedback
-  };
-
-  const validatePhone = (phone) => {
-    const regex = /^010-\d{4}-\d{4}$/;
-    return regex.test(phone);
-  };
-
-  const nextStep = () => {
-    if (step === 1) {
-      if (!validatePhone(formData.phone)) {
-        setErrorMsg("휴대폰 번호를 010-0000-0000 형식으로 정확히 입력해주세요.");
-        return;
-      }
-      if (!formData.regionDo || !formData.regionSi) {
-        setErrorMsg("지역을 모두 선택해주세요.");
-        return;
-      }
-    }
-    if (step === 2 && !formData.userType) { setErrorMsg("고객 구분을 선택해주세요."); return; }
-    if (step === 3 && !formData.timeline) { setErrorMsg("시공 시기를 선택해주세요."); return; }
-    if (step === 4 && !formData.liftingType) { setErrorMsg("양중(자재반입) 환경을 선택해주세요."); return; }
-    if (step === 5) {
-      if (!formData.operationType) { setErrorMsg("구동 방식을 선택해주세요."); return; }
-      if (!formData.width || !formData.projection) { setErrorMsg("가로, 세로 사이즈를 입력해주세요."); return; }
-    }
-    setErrorMsg("");
-    setStep(step + 1);
-  };
-
-  const prevStep = () => {
-    setStep(step - 1);
-    setErrorMsg("");
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // ----- [핵심 수정] 견적 계산 로직 분리 (방향 전환 비교용) -----
-  const calcPrice = (w, p, operationType) => {
-    const isManual = operationType === 'manual';
-    const MAX_W = 4000;
-    // Manual Max P: 5925, Electric Max P: 5925 (Both tables now go up to 5925)
-    const MAX_P = 5925; 
-    
-    // m -> mm
-    const reqW = Math.round(parseFloat(w) * 1000);
-    const reqP = Math.round(parseFloat(p) * 1000);
-
-    const countW = Math.ceil(reqW / MAX_W);
-    const countP = Math.ceil(reqP / MAX_P);
-    const totalUnits = countW * countP;
-    
-    const unitW = Math.round(reqW / countW);
-    const unitP = Math.round(reqP / countP);
-
-    // 테이블 선택 (수동 vs 전동)
-    const table = isManual ? oasisManualPriceTable : oasisElectricPriceTable;
-    const pivotKeys = Object.keys(table).map(Number).sort((a,b)=>a-b);
-    
-    let matchedPivot = pivotKeys.find(pivot => pivot >= unitP);
-    if (!matchedPivot) matchedPivot = pivotKeys[pivotKeys.length - 1]; 
-
-    const getSpanIndex = (span) => {
-        if (span <= 1000) return 0;
-        if (span <= 1500) return 1;
-        if (span <= 2000) return 2;
-        if (span <= 2500) return 3;
-        if (span <= 3000) return 4;
-        if (span <= 3500) return 5;
-        return 6; 
-    };
-
-    const spanIdx = getSpanIndex(unitW);
-    const unitPrice = table[matchedPivot][spanIdx];
-    
-    return {
-        unitPrice,
-        totalUnits,
-        unitW,
-        unitP,
-        totalBasePrice: unitPrice * totalUnits
-    };
-  };
-
-  const calculateQuote = async () => {
-    // Validation for Step 6 (Glass Door)
-    if (step === 6 && formData.optionGlass === '') {
-        setErrorMsg("글라스 도어 옵션을 반드시 선택해주세요 (설치 안함 포함)");
-        return;
-    }
-
-    setLoading(true);
-    setErrorMsg("");
-
-    try {
-      // 1. 입력된 방향대로 계산
-      const resultOriginal = calcPrice(formData.width, formData.projection, formData.operationType);
-
-      // 2. 방향을 돌려서 계산 (가로 <-> 세로)
-      const resultSwapped = calcPrice(formData.projection, formData.width, formData.operationType);
-
-      // 3. 더 저렴하거나 유닛 수가 적은 쪽 선택
-      // (가격이 같다면 유닛 수가 적은 쪽을, 그것도 같다면 원래 입력 방향을 선호)
-      let finalCalc = resultOriginal;
-      let isSwapped = false;
-
-      // 만약 돌렸을 때 유닛 수가 더 적다면 무조건 유리 (시공비 절감 등)
-      if (resultSwapped.totalUnits < resultOriginal.totalUnits) {
-          finalCalc = resultSwapped;
-          isSwapped = true;
-      } 
-      // 유닛 수는 같은데 제품 가격이 더 싸다면
-      else if (resultSwapped.totalUnits === resultOriginal.totalUnits) {
-          if (resultSwapped.totalBasePrice < resultOriginal.totalBasePrice) {
-              finalCalc = resultSwapped;
-              isSwapped = true;
-          }
-      }
-      
-      // Re-calculate total price from scratch based on finalCalc
-      let totalPrice = finalCalc.totalBasePrice;
-      let optionDetails = [];
-      
-      const isManual = formData.operationType === 'manual'; // Define isManual here
-
-      if (formData.optionLed) {
-        const ledCost = isManual ? 1000000 : 500000;
-        totalPrice += (ledCost * finalCalc.totalUnits);
-        optionDetails.push({ name: `LED 조명 옵션 (${isManual ? '수동형' : '전동형'})`, cost: ledCost * finalCalc.totalUnits });
-      }
-
-      if (formData.optionGlass === 'with') {
-        optionDetails.push({ name: '글라스 도어 (상세 실측 후 확정)', cost: 0, note: '별도 견적' });
-      }
-
-      if (formData.optionDeck) {
-        optionDetails.push({ name: '데크 시공 (현장 확인 후 견적)', cost: 0, note: '별도 견적' });
-      }
-
-      let freight = 300000;
-      if (['제주특별자치도'].includes(formData.regionDo)) freight = 1800000;
-      else if (['경상북도','경상남도','부산광역시','울산광역시','대구광역시'].includes(formData.regionDo)) freight = 500000;
-      else if (['전라남도','전북특별자치도','광주광역시'].includes(formData.regionDo)) freight = 500000;
-      
-      const labor = 800000 * finalCalc.totalUnits;
-      totalPrice += (freight + labor);
-
-      // 수정: 모든 양중비는 '별도 견적'으로 처리
-      if (['ladder', 'crane', 'long_carry'].includes(formData.liftingType)) {
-        optionDetails.push({ name: '양중비 (사다리차/크레인/소운반)', cost: 0, note: '별도 견적' });
-      }
-
-      // 원본 입력치(m)
-      const inputW = Math.round(parseFloat(formData.width) * 1000);
-      const inputP = Math.round(parseFloat(formData.projection) * 1000);
-
-      const quoteResult = {
-        totalPrice: totalPrice,
-        isSwapped: isSwapped, // 방향 전환 여부
-        breakdown: {
-          totalUnits: finalCalc.totalUnits,
-          unitW: finalCalc.unitW,
-          unitP: finalCalc.unitP,
-          unitPrice: finalCalc.unitPrice,
-          productTotal: finalCalc.totalBasePrice,
-          freight,
-          labor,
-          options: optionDetails
-        },
-        splitInfo: finalCalc.totalUnits > 1 ? `입력하신 사이즈(${inputW}x${inputP})가 최대 규격을 초과하여, 안정적인 내구성을 위해 ${finalCalc.totalUnits}개 모듈로 분할 시공됩니다.` : null
-      };
-
-      // 1. Send Email (using SDK)
-      await sendEmailToHeadquarters(quoteResult);
-
-      // 2. Save to Firestore
-      saveToFirestore(quoteResult);
-      
-      setResult(quoteResult);
-
-    } catch (err) {
-      console.error(err);
-      setErrorMsg("오류가 발생했습니다: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendEmailToHeadquarters = async (quoteData) => {
-    // Check if SDK is loaded
-    if (!emailJsReady || !window.emailjs) {
-        console.warn("EmailJS SDK not ready. Retrying via fetch not recommended.");
-        throw new Error("이메일 전송 시스템이 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
-    }
-
-    const templateParams = {
-        // [수정됨] 기본 템플릿(message)에 내용을 꽉 채워서 보냄
-        to_name: "관리자",
-        from_name: formData.phone,
-        message: `
-[테라까사 견적 상세]
---------------------------------
-■ 고객 정보
-- 연락처: ${formData.phone}
-- 지역: ${formData.regionDo} ${formData.regionSi}
-- 구분: ${formData.userType}
-
-■ 시공 정보
-- 시기: ${formData.timeline}
-- 입력 사이즈: ${formData.width}m x ${formData.projection}m
-- 적용 모델: ${formData.operationType === 'manual' ? '수동(Manual)' : '전동(Electric)'}
-${quoteData.isSwapped ? '※ 최적 견적을 위해 가로/세로 방향이 변경 적용되었습니다.' : ''}
-
-■ 옵션 및 금액
-- 선택옵션: ${formData.optionLed ? 'LED ' : ''}${formData.optionGlass !== 'none' ? '글라스도어 ' : ''}${formData.optionDeck ? '데크' : ''}
-- 총 견적가: ${quoteData.totalPrice.toLocaleString()}원
---------------------------------
-        `,
-        // 아래는 기존 개별 필드 (나중에 템플릿 수정 시 사용 가능)
-        phone: formData.phone,
-        region: `${formData.regionDo} ${formData.regionSi}`,
-        user_type: formData.userType,
-        timeline: formData.timeline,
-        width: formData.width,
-        projection: formData.projection,
-        model: formData.operationType === 'manual' ? '수동(Manual)' : '전동(Electric)',
-        totalPrice: quoteData.totalPrice.toLocaleString(),
-        options: `${formData.optionLed ? 'LED ' : ''}${formData.optionGlass !== 'none' ? '글라스도어 ' : ''}${formData.optionDeck ? '데크' : ''}`
-    };
-
-    try {
-        // Use SDK's send method
-        const response = await window.emailjs.send(
-            EMAILJS_SERVICE_ID,
-            EMAILJS_TEMPLATE_ID,
-            templateParams
-        );
-        console.log('SUCCESS!', response.status, response.text);
-    } catch (error) {
-        console.error('FAILED...', error);
-        // SDK error object usually contains text
-        throw new Error(`이메일 발송 실패: ${error.text || '알 수 없는 오류'}`);
-    }
-  };
-
-  const saveToFirestore = async (quoteData) => {
-    try {
-      if (!auth.currentUser) return; // Guard
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'terracasa_estimates'), {
-        customer: {
-          phone: formData.phone,
-          region: `${formData.regionDo} ${formData.regionSi}`,
-          type: formData.userType,
-          timeline: formData.timeline
-        },
-        specs: {
-          operation: formData.operationType,
-          width: formData.width,
-          projection: formData.projection,
-          lifting: formData.liftingType,
-          measurementNeed: formData.measurementNeed,
-          isSwapped: quoteData.isSwapped // DB에도 방향 전환 여부 저장
-        },
-        options: {
-          led: formData.optionLed,
-          glass: formData.optionGlass,
-          deck: formData.optionDeck
-        },
-        quote: quoteData,
-        createdAt: serverTimestamp(),
-        marketingConsent: true,
-      });
-    } catch (e) {
-      console.error("Firestore save failed:", e);
-      // Ignore DB errors as Email is primary now
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans print:bg-white print:p-0 print:block">
-      <style>{`
+    <style>
+        /* Custom Colors */
         .text-tc-olive { color: #4A5D23; }
         .bg-tc-olive { background-color: #4A5D23; }
         .ring-tc-olive { --tw-ring-color: #4A5D23; }
+        .border-tc-olive { border-color: #4A5D23; }
+        .accent-tc-olive { accent-color: #4A5D23; }
         
+        /* Print Styles */
         @media print {
-          body > * { display: none !important; }
-          .fixed, .fixed * { display: block !important; visibility: visible !important; }
-          .fixed { position: relative !important; inset: 0 !important; background: white !important; width: 100% !important; height: auto !important; }
-          #print-area { 
-            box-shadow: none !important; 
-            max-width: 100% !important; 
-            width: 100% !important; 
-            border: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          .print\\:hidden { display: none !important; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body > * { display: none !important; }
+            #modal-root, #modal-root * { display: block !important; visibility: visible !important; }
+            #modal-root { position: absolute !important; inset: 0 !important; background: white !important; width: 100% !important; height: auto !important; z-index: 9999; }
+            #print-area { 
+                box-shadow: none !important; 
+                max-width: 100% !important; 
+                width: 100% !important; 
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+            .print-hidden { display: none !important; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
-      `}</style>
 
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden min-h-[600px] flex flex-col print:hidden">
-        {/* Header */}
-        <div className="bg-white border-b p-4 flex justify-between items-center">
-          <h1 className="text-lg font-extrabold text-tc-olive tracking-wide">TERRACASA ESTIMATE</h1>
-          <div className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">Step {step} / 6</div>
-        </div>
+        /* Animations */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin { animation: spin 1s linear infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans flex items-center justify-center p-4">
 
-        {/* Progress Bar */}
-        <div className="w-full h-1 bg-gray-100">
-          <div 
-            className="h-full bg-tc-olive transition-all duration-300 ease-out"
-            style={{ width: `${(step / 6) * 100}%` }}
-          />
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 p-6 md:p-8 overflow-y-auto">
-          {step === 1 && <Step1_BasicInfo formData={formData} setFormData={setFormData} setErrorMsg={setErrorMsg} handleRegionDoChange={handleRegionDoChange} />}
-          {step === 2 && <Step2_UserType formData={formData} handleAutoNext={handleAutoNext} errorMsg={errorMsg} />}
-          {step === 3 && <Step3_Timeline formData={formData} handleAutoNext={handleAutoNext} errorMsg={errorMsg} />}
-          {step === 4 && <Step4_Lifting formData={formData} handleAutoNext={handleAutoNext} errorMsg={errorMsg} />}
-          {step === 5 && <Step5_Specs formData={formData} setFormData={setFormData} handleChange={handleChange} />}
-          {step === 6 && <Step6_Options formData={formData} setFormData={setFormData} handleChange={handleChange} errorMsg={errorMsg} />}
-        </div>
-
-        {/* Footer / Controls */}
-        <div className="p-4 bg-white border-t space-y-3">
-          {/* Error message is now handled inside steps for better placement, or here for generic */}
-          
-          <div className="flex gap-3">
-            {step > 1 && (
-              <button 
-                onClick={prevStep}
-                className="flex-1 py-3 rounded-xl border border-gray-300 font-bold text-gray-500 hover:bg-gray-50 transition"
-              >
-                이전
-              </button>
-            )}
-            
-            {step < 6 ? (
-              <button 
-                onClick={nextStep}
-                className="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2"
-              >
-                다음 <ChevronRight size={20} />
-              </button>
-            ) : (
-              <button 
-                onClick={calculateQuote}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2 disabled:bg-gray-400"
-              >
-                {loading ? '전송중...' : '견적 확인하기'} {loading ? <Send className="animate-spin" size={20}/> : <Calculator size={20} />}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {result && (
-        <ResultModal 
-          result={result} 
-          formData={formData} 
-          onClose={() => setResult(null)} 
-          onReset={() => window.location.reload()}
-          onPrint={handlePrint}
-        />
-      )}
+    <!-- App Root -->
+    <div id="app" class="bg-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden min-h-[600px] flex flex-col relative">
+        <!-- Dynamic Content Will Be Rendered Here -->
     </div>
-  );
-}
+
+    <!-- Modal Root -->
+    <div id="modal-root" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <!-- Modal Content Will Be Rendered Here -->
+    </div>
+
+    <script type="module">
+        // ==================================================================================
+        // [설정] Firebase Imports & Initialization
+        // ==================================================================================
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Global Variable Access (Canvas Environment)
+        const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : JSON.stringify({ apiKey: "dummy", authDomain: "dummy", projectId: "dummy" }); // Fallback for safety
+        const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, auth, db;
+        
+        try {
+            const firebaseConfig = JSON.parse(firebaseConfigStr);
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase Init Error:", e);
+        }
+
+        // ==================================================================================
+        // [설정] EmailJS
+        // ==================================================================================
+        const EMAILJS_SERVICE_ID = "service_r3nil9k";   
+        const EMAILJS_TEMPLATE_ID = "template_2lqnkam"; 
+        const EMAILJS_PUBLIC_KEY = "uqikvD1GCoxfF_h69";   
+        let emailJsReady = false;
+
+        // ==================================================================================
+        // [데이터] 가격표 & 지역 데이터
+        // ==================================================================================
+        const oasisManualPriceTable = {
+            2600: [3200000, 3400000, 3600000, 3800000, 4000000, 4200000, 4400000],
+            2775: [3240000, 3450000, 3660000, 3870000, 4080000, 4290000, 4500000],
+            2950: [3280000, 3500000, 3720000, 3940000, 4160000, 4380000, 4600000],
+            3125: [3320000, 3550000, 3780000, 4010000, 4240000, 4470000, 4700000],
+            3300: [3360000, 3600000, 3840000, 4080000, 4320000, 4560000, 4800000],
+            3475: [3400000, 3650000, 3900000, 4150000, 4400000, 4650000, 4900000],
+            3650: [3440000, 3700000, 3960000, 4220000, 4480000, 4740000, 5000000],
+            3825: [3480000, 3750000, 4020000, 4290000, 4560000, 4830000, 5100000],
+            4000: [3520000, 3800000, 4080000, 4360000, 4640000, 4920000, 5200000],
+            4175: [3560000, 3850000, 4140000, 4430000, 4720000, 5010000, 5300000],
+            4350: [3600000, 3900000, 4200000, 4500000, 4800000, 5100000, 5400000],
+            4525: [3640000, 3950000, 4260000, 4570000, 4880000, 5190000, 5500000],
+            4700: [3680000, 4000000, 4320000, 4640000, 4960000, 5280000, 5600000],
+            4875: [3720000, 4050000, 4380000, 4710000, 5040000, 5370000, 5700000],
+            5050: [3760000, 4100000, 4440000, 4780000, 5120000, 5460000, 5800000],
+            5225: [3800000, 4150000, 4500000, 4850000, 5200000, 5550000, 5900000],
+            5400: [3840000, 4200000, 4560000, 4920000, 5280000, 5640000, 6000000],
+            5575: [3880000, 4250000, 4620000, 4990000, 5360000, 5730000, 6100000],
+            5750: [3920000, 4300000, 4680000, 5060000, 5440000, 5820000, 6200000],
+            5925: [3960000, 4350000, 4740000, 5130000, 5520000, 5910000, 6300000]
+        };
+
+        const oasisElectricPriceTable = {
+            2600: [3600000, 3850000, 4100000, 4350000, 4600000, 4850000, 5100000],
+            2775: [3640000, 3900000, 4160000, 4420000, 4680000, 4940000, 5200000],
+            2950: [3680000, 3950000, 4220000, 4490000, 4760000, 5030000, 5300000],
+            3125: [3720000, 4000000, 4280000, 4560000, 4840000, 5120000, 5400000],
+            3300: [3760000, 4050000, 4340000, 4630000, 4920000, 5210000, 5500000],
+            3475: [3800000, 4100000, 4400000, 4700000, 5000000, 5300000, 5600000],
+            3650: [3840000, 4150000, 4460000, 4770000, 5080000, 5390000, 5700000],
+            3825: [3880000, 4200000, 4520000, 4840000, 5160000, 5480000, 5800000],
+            4000: [3920000, 4250000, 4580000, 4910000, 5240000, 5570000, 5900000],
+            4175: [3960000, 4300000, 4640000, 4980000, 5320000, 5660000, 6000000],
+            4350: [4000000, 4350000, 4700000, 5050000, 5400000, 5750000, 6100000],
+            4525: [4040000, 4400000, 4760000, 5120000, 5480000, 5840000, 6200000],
+            4700: [4080000, 4450000, 4820000, 5190000, 5560000, 5930000, 6300000],
+            4875: [4120000, 4500000, 4880000, 5260000, 5640000, 6020000, 6400000],
+            5050: [4160000, 4550000, 4940000, 5330000, 5720000, 6110000, 6500000],
+            5225: [4200000, 4600000, 5000000, 5400000, 5800000, 6200000, 6600000],
+            5400: [4240000, 4650000, 5060000, 5470000, 5880000, 6290000, 6700000],
+            5575: [4280000, 4700000, 5120000, 5540000, 5960000, 6380000, 6800000],
+            5750: [4320000, 4750000, 5180000, 5610000, 6040000, 6470000, 6900000],
+            5925: [4360000, 4800000, 5240000, 5680000, 6120000, 6560000, 7000000]
+        };
+
+        const regions = {
+            '서울특별시': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구', '종로구', '중구', '중랑구'],
+            '부산광역시': ['강서구', '금정구', '기장군', '남구', '동구', '동래구', '부산진구', '북구', '사상구', '사하구', '서구', '수영구', '연제구', '영도구', '중구', '해운대구'],
+            '대구광역시': ['군위군', '남구', '달서구', '달성군', '동구', '북구', '서구', '수성구', '중구'],
+            '인천광역시': ['강화군', '계양구', '남동구', '동구', '미추홀구', '부평구', '서구', '연수구', '옹진군', '중구'],
+            '광주광역시': ['광산구', '남구', '동구', '북구', '서구'],
+            '대전광역시': ['대덕구', '동구', '서구', '유성구', '중구'],
+            '울산광역시': ['남구', '동구', '북구', '울주군', '중구'],
+            '세종특별자치시': ['세종시'],
+            '경기도': ['가평군', '고양시', '과천시', '광명시', '광주시', '구리시', '군포시', '김포시', '남양주시', '동두천시', '부천시', '성남시', '수원시', '시흥시', '안산시', '안성시', '안양시', '양주시', '양평군', '여주시', '연천군', '오산시', '용인시', '의왕시', '의정부시', '이천시', '파주시', '평택시', '포천시', '하남시', '화성시'],
+            '강원특별자치도': ['강릉시', '고성군', '동해시', '삼척시', '속초시', '양구군', '양양군', '영월군', '원주시', '인제군', '정선군', '철원군', '춘천시', '태백시', '평창군', '홍천군', '화천군', '횡성군'],
+            '충청북도': ['괴산군', '단양군', '보은군', '영동군', '옥천군', '음성군', '제천시', '증평군', '진천군', '청주시', '충주시'],
+            '충청남도': ['계룡시', '공주시', '금산군', '논산시', '당진시', '보령시', '부여군', '서산시', '서천군', '아산시', '예산군', '천안시', '청양군', '태안군', '홍성군'],
+            '전북특별자치도': ['고창군', '군산시', '김제시', '남원시', '무주군', '부안군', '순창군', '완주군', '익산시', '임실군', '장수군', '전주시', '정읍시', '진안군'],
+            '전라남도': ['강진군', '고흥군', '곡성군', '광양시', '구례군', '나주시', '담양군', '목포시', '무안군', '보성군', '순천시', '신안군', '여수시', '영광군', '영암군', '완도군', '장성군', '장흥군', '진도군', '함평군', '해남군', '화순군'],
+            '경상북도': ['경산시', '경주시', '고령군', '구미시', '김천시', '문경시', '봉화군', '상주시', '성주군', '안동시', '영덕군', '영양군', '영주시', '영천시', '예천군', '울릉군', '울진군', '의성군', '청도군', '청송군', '칠곡군', '포항시'],
+            '경상남도': ['거제시', '거창군', '고성군', '김해시', '남해군', '밀양시', '사천시', '산청군', '양산시', '의령군', '진주시', '창녕군', '창원시', '통영시', '하동군', '함안군', '함양군', '합천군'],
+            '제주특별자치도': ['서귀포시', '제주시']
+        };
+
+        // ==================================================================================
+        // [State Management]
+        // ==================================================================================
+        const state = {
+            step: 1,
+            loading: false,
+            errorMsg: "",
+            result: null,
+            user: null,
+            formData: {
+                phone: '',
+                regionDo: '',
+                regionSi: '',
+                userType: '',
+                timeline: '',
+                liftingType: '',
+                operationType: '',
+                width: '', 
+                projection: '', 
+                height: '3000',
+                measurementNeed: 'approx',
+                optionLed: false,
+                optionGlass: '',
+                optionDeck: false,
+            }
+        };
+
+        // ==================================================================================
+        // [Initialization]
+        // ==================================================================================
+        async function init() {
+            // 1. EmailJS Init
+            if (window.emailjs) {
+                window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+                emailJsReady = true;
+                console.log("EmailJS Ready");
+            } else {
+                console.error("EmailJS SDK failed to load");
+            }
+
+            // 2. Firebase Auth Init
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                onAuthStateChanged(auth, (user) => {
+                    state.user = user;
+                });
+            } catch (e) {
+                console.log("Auth init skipped or failed", e);
+            }
+
+            render();
+        }
+
+        // ==================================================================================
+        // [Rendering Logic]
+        // ==================================================================================
+        const appEl = document.getElementById('app');
+        const modalEl = document.getElementById('modal-root');
+
+        function render() {
+            // Render Main App
+            appEl.innerHTML = `
+                ${renderHeader()}
+                <div class="w-full h-1 bg-gray-100">
+                    <div class="h-full bg-tc-olive transition-all duration-300 ease-out" style="width: ${(state.step / 6) * 100}%"></div>
+                </div>
+                <div class="flex-1 p-6 md:p-8 overflow-y-auto">
+                    ${renderStep()}
+                </div>
+                ${renderFooter()}
+            `;
+
+            // Render Modal
+            if (state.result) {
+                modalEl.classList.remove('hidden');
+                modalEl.innerHTML = renderResultModal();
+            } else {
+                modalEl.classList.add('hidden');
+                modalEl.innerHTML = '';
+            }
+
+            // Initialize Icons
+            lucide.createIcons();
+
+            // Attach Event Listeners
+            attachEventListeners();
+        }
+
+        function renderHeader() {
+            return `
+                <div class="bg-white border-b p-4 flex justify-between items-center">
+                    <h1 class="text-lg font-extrabold text-tc-olive tracking-wide">TERRACASA ESTIMATE</h1>
+                    <div class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">Step ${state.step} / 6</div>
+                </div>
+            `;
+        }
+
+        function renderFooter() {
+            return `
+                <div class="p-4 bg-white border-t space-y-3">
+                    <div class="flex gap-3">
+                        ${state.step > 1 ? `
+                            <button id="btn-prev" class="flex-1 py-3 rounded-xl border border-gray-300 font-bold text-gray-500 hover:bg-gray-50 transition">
+                                이전
+                            </button>
+                        ` : ''}
+                        
+                        ${state.step < 6 ? `
+                            <button id="btn-next" class="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2">
+                                다음 <i data-lucide="chevron-right" width="20"></i>
+                            </button>
+                        ` : `
+                            <button id="btn-calc" ${state.loading ? 'disabled' : ''} class="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2 disabled:bg-gray-400">
+                                ${state.loading ? '전송중...' : '견적 확인하기'} 
+                                ${state.loading ? '<i data-lucide="send" class="animate-spin" width="20"></i>' : '<i data-lucide="calculator" width="20"></i>'}
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStep() {
+            switch(state.step) {
+                case 1: return renderStep1();
+                case 2: return renderStep2();
+                case 3: return renderStep3();
+                case 4: return renderStep4();
+                case 5: return renderStep5();
+                case 6: return renderStep6();
+                default: return '';
+            }
+        }
+
+        // --- Step Components ---
+
+        function renderStep1() {
+            const siOptions = state.formData.regionDo ? regions[state.formData.regionDo].map(s => `<option value="${s}" ${state.formData.regionSi === s ? 'selected' : ''}>${s}</option>`).join('') : '';
+            
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="phone" class="w-6 h-6 text-tc-olive"></i> 기본 정보 입력
+                    </h2>
+                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r">
+                        <div class="flex items-start">
+                            <i data-lucide="alert-triangle" class="h-5 w-5 text-yellow-600 mr-2 mt-0.5"></i>
+                            <p class="text-sm text-yellow-700 font-bold">
+                                안내: 타인의 전화번호를 도용하여 견적을 산출할 경우 법적인 책임이 따를 수 있습니다. 반드시 본인의 휴대전화 번호를 입력해주세요.
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">휴대폰 번호</label>
+                        <input type="tel" id="input-phone" value="${state.formData.phone}" placeholder="010-0000-0000" maxlength="13" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive focus:border-transparent outline-none transition">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">시/도</label>
+                            <select id="select-do" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white">
+                                <option value="">선택</option>
+                                ${Object.keys(regions).map(r => `<option value="${r}" ${state.formData.regionDo === r ? 'selected' : ''}>${r}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">시/군/구</label>
+                            <select id="select-si" ${!state.formData.regionDo ? 'disabled' : ''} class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white disabled:bg-gray-100">
+                                <option value="">선택</option>
+                                ${siOptions}
+                            </select>
+                        </div>
+                    </div>
+                    ${renderErrorMsg()}
+                </div>
+            `;
+        }
+
+        function renderStep2() {
+            const types = ['개인 고객', '인테리어 업체', '조경 업체', '건축/설계사', '관공서/기업'];
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="user" class="w-6 h-6 text-tc-olive"></i> 고객 구분
+                    </h2>
+                    <p class="text-sm text-gray-500">정확한 상담 배정을 위해 고객 유형을 선택해주세요.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${types.map(type => `
+                            <button onclick="window.handleAutoNext('userType', '${type}')" class="p-4 rounded-xl border-2 text-left transition-all ${state.formData.userType === type ? 'border-tc-olive bg-green-50 text-tc-olive font-bold shadow-md' : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'}">
+                                ${type}
+                            </button>
+                        `).join('')}
+                    </div>
+                    ${renderErrorMsg()}
+                </div>
+            `;
+        }
+
+        function renderStep3() {
+            const options = [
+                { label: '1개월 이내 (긴급)', val: 'urgent' },
+                { label: '3개월 이내 (보통)', val: 'normal' },
+                { label: '6개월 이내 (여유)', val: 'relaxed' },
+                { label: '6개월 이후 / 계획단계', val: 'planning' }
+            ];
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="calendar" class="w-6 h-6 text-tc-olive"></i> 시공 예정 시기
+                    </h2>
+                    <div class="grid grid-cols-1 gap-3">
+                        ${options.map(item => `
+                            <button onclick="window.handleAutoNext('timeline', '${item.val}')" class="p-4 rounded-xl border-2 text-left transition-all ${state.formData.timeline === item.val ? 'border-tc-olive bg-green-50 text-tc-olive font-bold shadow-md' : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'}">
+                                ${item.label}
+                            </button>
+                        `).join('')}
+                    </div>
+                    ${renderErrorMsg()}
+                </div>
+            `;
+        }
+
+        function renderStep4() {
+            const liftingOptions = [
+                { label: '즉시 진입 가능', desc: '1층 / 화물차 하차 후 즉시 진입', val: 'direct_entry', icon: 'arrow-right-from-line' },
+                { label: '사다리차 사용', desc: '1층 이상 / 진입로 협소', val: 'ladder', icon: 'arrow-up-to-line' },
+                { label: '크레인 사용', desc: '고층 / 대형 장비 필요', val: 'crane', icon: 'construction' },
+                { label: '자재 소운반 (20m+)', desc: '하차 후 20m 이상 인력 운반', val: 'long_carry', icon: 'footprints' },
+                { label: '잘 모르겠음', desc: '현장 확인 필요', val: 'unknown', icon: 'help-circle' }
+            ];
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="truck" class="w-6 h-6 text-tc-olive"></i> 자재 반입 환경 (양중)
+                    </h2>
+                    <p class="text-sm text-gray-500">설치 장소로 자재를 옮길 수 있는 가장 유사한 방법을 선택해주세요.</p>
+                    <div class="grid grid-cols-1 gap-3">
+                        ${liftingOptions.map(item => `
+                            <button onclick="window.handleAutoNext('liftingType', '${item.val}')" class="p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 group ${state.formData.liftingType === item.val ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-gray-200 hover:border-tc-olive hover:bg-gray-50'}">
+                                <div class="flex-shrink-0 p-2 rounded-full border border-gray-100 shadow-sm transition-colors ${state.formData.liftingType === item.val ? 'bg-white text-tc-olive' : 'bg-gray-50 text-gray-400 group-hover:text-tc-olive'}">
+                                    <i data-lucide="${item.icon}" class="w-8 h-8"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-lg ${state.formData.liftingType === item.val ? 'text-tc-olive' : 'text-gray-800'}">${item.label}</div>
+                                    <div class="text-sm text-gray-500">${item.desc}</div>
+                                </div>
+                            </button>
+                        `).join('')}
+                    </div>
+                    ${renderErrorMsg()}
+                </div>
+            `;
+        }
+
+        function renderStep5() {
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="ruler" class="w-6 h-6 text-tc-olive"></i> 제품 사양 및 사이즈
+                    </h2>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div onclick="window.updateFormData('operationType', 'manual')" class="cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden ${state.formData.operationType === 'manual' ? 'border-tc-olive bg-green-50 ring-2 ring-tc-olive ring-opacity-50' : 'border-gray-200 hover:border-gray-300'}">
+                            <div class="absolute top-0 right-0 p-2 opacity-10"><i data-lucide="sun" class="w-24 h-24"></i></div>
+                            <div class="flex justify-between items-center mb-2 relative z-10">
+                                <span class="font-bold text-lg">수동 (Manual)</span>
+                                <i data-lucide="sun" class="w-6 h-6 text-orange-400"></i>
+                            </div>
+                            <ul class="text-xs text-gray-600 space-y-1 relative z-10">
+                                <li class="text-blue-600 font-semibold">✔ 경제적인 가격</li>
+                                <li>✖ LED 옵션 설치 어려움</li>
+                                <li>✖ 글라스 도어 설치 제한</li>
+                            </ul>
+                        </div>
+                        <div onclick="window.updateFormData('operationType', 'electric')" class="cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden ${state.formData.operationType === 'electric' ? 'border-tc-olive bg-green-50 ring-2 ring-tc-olive ring-opacity-50' : 'border-gray-200 hover:border-gray-300'}">
+                            <div class="absolute top-0 right-0 p-2 opacity-10"><i data-lucide="zap" class="w-24 h-24"></i></div>
+                            <div class="flex justify-between items-center mb-2 relative z-10">
+                                <span class="font-bold text-lg text-tc-olive">전동 (Electric)</span>
+                                <i data-lucide="zap" class="w-6 h-6 text-yellow-500"></i>
+                            </div>
+                            <ul class="text-xs text-gray-600 space-y-1 relative z-10">
+                                <li>✔ 리모컨 작동 편리함</li>
+                                <li class="text-blue-600 font-semibold">✔ LED 조명 옵션 가능</li>
+                                <li class="text-blue-600 font-semibold">✔ 글라스 도어 호환 우수</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                        <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+                            <i data-lucide="mouse-pointer-click" class="w-5 h-5 text-tc-olive"></i> 설치 공간 사이즈 (단위: 미터 m)
+                        </h3>
+                        <div class="grid grid-cols-2 gap-6 mb-6">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-2 ml-1">가로 (Width)</label>
+                                <div class="relative">
+                                    <input type="number" id="input-width" value="${state.formData.width}" placeholder="예: 4" step="0.1" class="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm">
+                                    <span class="absolute right-4 top-5 text-gray-400 font-bold">m</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-2 ml-1">세로/돌출 (Projection)</label>
+                                <div class="relative">
+                                    <input type="number" id="input-projection" value="${state.formData.projection}" placeholder="예: 3" step="0.1" class="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm">
+                                    <span class="absolute right-4 top-5 text-gray-400 font-bold">m</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-blue-50 p-4 rounded-xl flex items-start gap-3 text-blue-800">
+                            <i data-lucide="info" class="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+                            <div class="text-sm leading-relaxed">
+                                <span class="font-bold block mb-1">💡 부담 갖지 말고 작성해주세요!</span>
+                                현장에서 직접 줄자로 잰 대략적인 수치만 적어주시면 됩니다. 
+                                정확한 mm단위 실측은 계약 후 <span class="font-bold underline">시공대표님이 방문하여 꼼꼼하게 진행</span>해 드립니다.
+                            </div>
+                        </div>
+                    </div>
+                    ${renderErrorMsg()}
+                </div>
+            `;
+        }
+
+        function renderStep6() {
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-tc-olive"></i> 추가 옵션 선택
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 gap-4">
+                        <label class="relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${state.formData.optionLed ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-gray-200 hover:border-gray-300'}">
+                            <div class="flex-shrink-0 mt-1">
+                                <input type="checkbox" id="check-led" ${state.formData.optionLed ? 'checked' : ''} class="w-5 h-5 accent-tc-olive">
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-bold text-gray-800 text-lg">LED 조명 추가</span>
+                                    <i data-lucide="lightbulb" class="w-6 h-6 ${state.formData.optionLed ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}"></i>
+                                </div>
+                                <p class="text-sm text-gray-500">야간에도 분위기 있는 테라스를 즐겨보세요.</p>
+                                ${state.formData.operationType === 'manual' && state.formData.optionLed ? `
+                                    <p class="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded font-bold">
+                                    ⚠️ 수동 모델은 LED 설치 시 별도 배선 비용이 크게 발생합니다. (전동 추천)
+                                    </p>
+                                ` : ''}
+                            </div>
+                        </label>
+
+                        <div class="p-4 rounded-xl border-2 transition-all ${state.formData.optionGlass !== '' ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-red-300 bg-red-50'}">
+                            <div class="flex justify-between items-center mb-3">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="door-open" class="w-6 h-6 ${state.formData.optionGlass !== '' ? 'text-blue-500' : 'text-red-400'}"></i>
+                                    <span class="font-bold text-gray-800 text-lg">글라스 도어 (폴딩/슬라이딩)</span>
+                                </div>
+                                ${state.formData.optionGlass === '' ? '<span class="text-xs text-red-500 font-bold animate-pulse">❗필수 선택</span>' : ''}
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                ${[
+                                    { val: 'none', label: '설치 안함' },
+                                    { val: 'with', label: '함께 시공 (추천)' },
+                                    { val: 'later', label: '추후 예정' }
+                                ].map(opt => `
+                                    <button onclick="window.updateFormData('optionGlass', '${opt.val}')" class="py-2 rounded-lg text-sm font-medium transition-all ${state.formData.optionGlass === opt.val ? 'bg-tc-olive text-white shadow-md' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}">
+                                        ${opt.label}
+                                    </button>
+                                `).join('')}
+                            </div>
+                            ${state.formData.operationType === 'manual' && state.formData.optionGlass !== '' && state.formData.optionGlass !== 'none' ? `
+                                <p class="mt-3 text-xs text-orange-600 bg-orange-50 p-2 rounded font-bold">
+                                💡 수동 핸들 간섭으로 인해 글라스 도어 설치가 제한될 수 있습니다.
+                                </p>
+                            ` : ''}
+                        </div>
+
+                        <label class="relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${state.formData.optionDeck ? 'border-tc-olive bg-green-50 ring-1 ring-tc-olive' : 'border-gray-200 hover:border-gray-300'}">
+                            <div class="flex-shrink-0 mt-1">
+                                <input type="checkbox" id="check-deck" ${state.formData.optionDeck ? 'checked' : ''} class="w-5 h-5 accent-tc-olive">
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-bold text-gray-800 text-lg">바닥 데크 시공 의뢰</span>
+                                    <i data-lucide="hammer" class="w-6 h-6 ${state.formData.optionDeck ? 'text-brown-500' : 'text-gray-300'}"></i>
+                                </div>
+                                <p class="text-sm text-gray-500">합성목재 또는 방부목 데크 시공 견적도 함께 받아봅니다.</p>
+                            </div>
+                        </label>
+                    </div>
+
+                    ${renderErrorMsg()}
+
+                    <div class="pt-4">
+                        <div class="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded">
+                            <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                            <p>
+                                '견적 확인하기'를 누르시면 
+                                <span class="font-bold text-gray-700"> 개인정보 수집 및 마케팅 활용</span>에 동의하는 것으로 간주되며, 
+                                입력하신 정보가 테라까사 담당자에게 안전하게 전송됩니다.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderErrorMsg() {
+            return state.errorMsg ? `<p class="text-red-500 font-bold text-center animate-pulse p-3 bg-red-100 rounded-lg mt-2">${state.errorMsg}</p>` : '';
+        }
+
+        function renderResultModal() {
+            const r = state.result;
+            if(!r) return '';
+            
+            const displayPrice = Math.round(r.totalPrice / 10000) * 10000 < r.totalPrice ? (Math.round(r.totalPrice / 10000) * 10000).toLocaleString() : r.totalPrice.toLocaleString();
+            
+            return `
+                <div id="print-area" class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+                    <div class="bg-tc-olive p-6 text-white text-center">
+                        <h2 class="text-3xl font-black mb-1 tracking-tight text-white">TERRACASA</h2>
+                        <p class="text-sm opacity-90 font-medium text-white">SMART QUOTATION SYSTEM</p>
+                    </div>
+                    
+                    <div class="p-6 space-y-6">
+                        <div class="text-center border-b pb-6 border-gray-100">
+                            <p class="text-sm text-gray-500 mb-1">총 예상 견적가 (VAT 별도)</p>
+                            <p class="text-4xl font-black text-gray-800 tracking-tight">
+                                ${displayPrice} <span class="text-xl font-normal text-gray-500 ml-1">원~</span>
+                            </p>
+                        </div>
+
+                        ${r.isSwapped ? `
+                            <div class="bg-green-50 p-4 rounded-xl border border-green-200 text-sm text-green-800 mb-4 flex items-start gap-2">
+                                <i data-lucide="rotate-cw" class="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600"></i>
+                                <div>
+                                    <span class="font-bold">가로/세로 방향 자동 최적화 적용됨</span>
+                                    <p class="mt-1">
+                                        입력하신 사이즈(${state.formData.width}m x ${state.formData.projection}m)보다 
+                                        <span class="font-bold underline"> 방향을 변경하여 시공(${state.formData.projection}m x ${state.formData.width}m)</span>하는 것이 
+                                        더 경제적이라 시스템이 자동으로 최적 견적을 산출했습니다.
+                                    </p>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${r.splitInfo ? `
+                            <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800">
+                                <p class="font-bold mb-1 flex items-center gap-1">
+                                    <i data-lucide="info" class="w-4 h-4"></i> 사이즈 자동 분할 안내
+                                </p>
+                                <div class="mb-2">${r.splitInfo}</div>
+                                <div class="text-xs text-blue-600 bg-white/50 p-2 rounded-lg border border-blue-100">
+                                   ※ 사이즈 자동 분할은 시스템 권장사항이며, <strong>담당자 상담을 통해 최소 금액으로 진행</strong>할 수 있도록 안내해 드릴 예정입니다.
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="space-y-3 text-sm">
+                            <div class="flex justify-between border-b pb-2">
+                                <span class="text-gray-500">고객명 / 연락처</span>
+                                <span class="font-bold">${state.formData.phone}</span>
+                            </div>
+                            <div class="flex justify-between border-b pb-2">
+                                <span class="text-gray-500">설치 지역</span>
+                                <span class="font-bold">${state.formData.regionDo} ${state.formData.regionSi}</span>
+                            </div>
+                            <div class="flex justify-between border-b pb-2">
+                                <span class="text-gray-500">선택 모델</span>
+                                <span class="font-bold text-tc-olive">${state.formData.operationType === 'manual' ? 'OASIS 수동' : 'OASIS 전동'}</span>
+                            </div>
+                            <div class="flex justify-between border-b pb-2">
+                                <span class="text-gray-500">제품 규격 ${r.isSwapped ? '(최적화됨)' : ''}</span>
+                                <span class="font-bold">${r.breakdown.unitW} x ${r.breakdown.unitP} (mm)</span>
+                            </div>
+                            <div class="flex justify-between border-b pb-2">
+                                <span class="text-gray-500">수량</span>
+                                <span class="font-bold">${r.breakdown.totalUnits} Set</span>
+                            </div>
+                            
+                            ${r.breakdown.options.map(opt => `
+                                <div class="flex justify-between border-b pb-2 text-gray-600">
+                                    <span>+ ${opt.name}</span>
+                                    <span>${opt.cost > 0 ? `₩ ${opt.cost.toLocaleString()}` : opt.note}</span>
+                                </div>
+                            `).join('')}
+                            
+                            <div class="flex justify-between border-b pb-2 text-gray-600">
+                                <span>+ 기본 시공/운임비</span>
+                                <span>₩ ${(r.breakdown.labor + r.breakdown.freight).toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 p-4 rounded-xl text-xs text-gray-500 space-y-1">
+                           <p class="font-bold text-gray-700 mb-1">※ 유의사항</p>
+                           <p>1. 자동견적 프로그램에 지역별 출장비는 반영되어있지 않습니다.</p>
+                           <p>2. 운임의 경우 제품의 개소에 따라 추가 부과 될 수 있습니다.</p>
+                           <p>• 위 금액은 가견적이며 현장 상황에 따라 변동될 수 있습니다.</p>
+                           <p>• 정확한 견적을 위해 담당자가 3일 이내로 연락드릴 예정입니다.</p>
+                           <p>• 글라스 도어 및 데크 시공비는 현장 실측 후 정확히 산출됩니다.</p>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-2 print-hidden pt-4">
+                            <button onclick="window.closeModal()" class="flex flex-col items-center justify-center p-3 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                                <i data-lucide="rotate-ccw" class="w-5 h-5 mb-1 rotate-90"></i>
+                                <span class="text-xs font-bold">이전으로</span>
+                            </button>
+                            
+                            <button onclick="location.reload()" class="flex flex-col items-center justify-center p-3 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
+                                <i data-lucide="x" class="w-5 h-5 mb-1"></i>
+                                <span class="text-xs font-bold">종료하기</span>
+                            </button>
+                            
+                            <button onclick="window.print()" class="flex flex-col items-center justify-center p-3 rounded-xl bg-tc-olive text-white hover:bg-green-800 transition shadow-lg">
+                                <i data-lucide="download" class="w-5 h-5 mb-1"></i>
+                                <span class="text-xs font-bold">견적서 저장</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+
+        // ==================================================================================
+        // [Logic & Event Handlers]
+        // ==================================================================================
+        function attachEventListeners() {
+            // General Inputs
+            const inputs = document.querySelectorAll('input, select');
+            inputs.forEach(el => {
+                el.addEventListener('change', (e) => {
+                    const id = e.target.id;
+                    if(id === 'input-phone') {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 3 && val.length <= 7) val = val.slice(0,3) + '-' + val.slice(3);
+                        else if (val.length > 7) val = val.slice(0,3) + '-' + val.slice(3,7) + '-' + val.slice(7, 11);
+                        state.formData.phone = val;
+                        render(); // Re-render for phone formatting
+                    } else if (id === 'select-do') {
+                        state.formData.regionDo = e.target.value;
+                        state.formData.regionSi = '';
+                        render();
+                    } else if (id === 'select-si') {
+                        state.formData.regionSi = e.target.value;
+                    } else if (id === 'input-width') {
+                        state.formData.width = e.target.value;
+                    } else if (id === 'input-projection') {
+                        state.formData.projection = e.target.value;
+                    } else if (id === 'check-led') {
+                        state.formData.optionLed = e.target.checked;
+                        render();
+                    } else if (id === 'check-deck') {
+                        state.formData.optionDeck = e.target.checked;
+                        render();
+                    }
+                    state.errorMsg = "";
+                });
+            });
+
+            // Buttons
+            const btnPrev = document.getElementById('btn-prev');
+            if(btnPrev) btnPrev.addEventListener('click', () => { state.step--; state.errorMsg = ""; render(); });
+
+            const btnNext = document.getElementById('btn-next');
+            if(btnNext) btnNext.addEventListener('click', handleNext);
+
+            const btnCalc = document.getElementById('btn-calc');
+            if(btnCalc) btnCalc.addEventListener('click', calculateQuote);
+        }
+
+        // Exposed functions for inline onclick events
+        window.handleAutoNext = (field, value) => {
+            state.formData[field] = value;
+            state.errorMsg = "";
+            render(); // Update UI to show selection
+            setTimeout(() => {
+                state.step++;
+                render();
+            }, 250);
+        };
+
+        window.updateFormData = (field, value) => {
+            state.formData[field] = value;
+            state.errorMsg = "";
+            render();
+        };
+        
+        window.closeModal = () => {
+            state.result = null;
+            render();
+        };
+
+        function validatePhone(phone) {
+            const regex = /^010-\d{4}-\d{4}$/;
+            return regex.test(phone);
+        }
+
+        function handleNext() {
+            if (state.step === 1) {
+                if (!validatePhone(state.formData.phone)) {
+                    state.errorMsg = "휴대폰 번호를 010-0000-0000 형식으로 정확히 입력해주세요.";
+                    render();
+                    return;
+                }
+                if (!state.formData.regionDo || !state.formData.regionSi) {
+                    state.errorMsg = "지역을 모두 선택해주세요.";
+                    render();
+                    return;
+                }
+            }
+            // Step 2, 3, 4 are handled by autoNext usually, but if manual next is needed
+            if (state.step === 2 && !state.formData.userType) { state.errorMsg = "고객 구분을 선택해주세요."; render(); return; }
+            if (state.step === 3 && !state.formData.timeline) { state.errorMsg = "시공 시기를 선택해주세요."; render(); return; }
+            if (state.step === 4 && !state.formData.liftingType) { state.errorMsg = "양중(자재반입) 환경을 선택해주세요."; render(); return; }
+            
+            if (state.step === 5) {
+                if (!state.formData.operationType) { state.errorMsg = "구동 방식을 선택해주세요."; render(); return; }
+                if (!state.formData.width || !state.formData.projection) { state.errorMsg = "가로, 세로 사이즈를 입력해주세요."; render(); return; }
+            }
+
+            state.errorMsg = "";
+            state.step++;
+            render();
+        }
+
+        // ==================================================================================
+        // [Logic] Calculation & API
+        // ==================================================================================
+        function calcPrice(w, p, operationType) {
+            const isManual = operationType === 'manual';
+            const MAX_W = 4000;
+            const MAX_P = 5925;
+            
+            const reqW = Math.round(parseFloat(w) * 1000);
+            const reqP = Math.round(parseFloat(p) * 1000);
+
+            const countW = Math.ceil(reqW / MAX_W);
+            const countP = Math.ceil(reqP / MAX_P);
+            const totalUnits = countW * countP;
+            
+            const unitW = Math.round(reqW / countW);
+            const unitP = Math.round(reqP / countP);
+
+            const table = isManual ? oasisManualPriceTable : oasisElectricPriceTable;
+            const pivotKeys = Object.keys(table).map(Number).sort((a,b)=>a-b);
+            
+            let matchedPivot = pivotKeys.find(pivot => pivot >= unitP);
+            if (!matchedPivot) matchedPivot = pivotKeys[pivotKeys.length - 1]; 
+
+            const getSpanIndex = (span) => {
+                if (span <= 1000) return 0;
+                if (span <= 1500) return 1;
+                if (span <= 2000) return 2;
+                if (span <= 2500) return 3;
+                if (span <= 3000) return 4;
+                if (span <= 3500) return 5;
+                return 6; 
+            };
+
+            const spanIdx = getSpanIndex(unitW);
+            const unitPrice = table[matchedPivot][spanIdx];
+            
+            return {
+                unitPrice,
+                totalUnits,
+                unitW,
+                unitP,
+                totalBasePrice: unitPrice * totalUnits
+            };
+        }
+
+        async function calculateQuote() {
+            if (state.step === 6 && state.formData.optionGlass === '') {
+                state.errorMsg = "글라스 도어 옵션을 반드시 선택해주세요 (설치 안함 포함)";
+                render();
+                return;
+            }
+
+            state.loading = true;
+            state.errorMsg = "";
+            render();
+
+            try {
+                // 1. Calc Original
+                const resultOriginal = calcPrice(state.formData.width, state.formData.projection, state.formData.operationType);
+                // 2. Calc Swapped
+                const resultSwapped = calcPrice(state.formData.projection, state.formData.width, state.formData.operationType);
+
+                let finalCalc = resultOriginal;
+                let isSwapped = false;
+
+                if (resultSwapped.totalUnits < resultOriginal.totalUnits) {
+                    finalCalc = resultSwapped;
+                    isSwapped = true;
+                } else if (resultSwapped.totalUnits === resultOriginal.totalUnits) {
+                    if (resultSwapped.totalBasePrice < resultOriginal.totalBasePrice) {
+                        finalCalc = resultSwapped;
+                        isSwapped = true;
+                    }
+                }
+
+                let totalPrice = finalCalc.totalBasePrice;
+                let optionDetails = [];
+                const isManual = state.formData.operationType === 'manual';
+
+                if (state.formData.optionLed) {
+                    const ledCost = isManual ? 1000000 : 500000;
+                    totalPrice += (ledCost * finalCalc.totalUnits);
+                    optionDetails.push({ name: `LED 조명 옵션 (${isManual ? '수동형' : '전동형'})`, cost: ledCost * finalCalc.totalUnits });
+                }
+
+                if (state.formData.optionGlass === 'with') {
+                    optionDetails.push({ name: '글라스 도어 (상세 실측 후 확정)', cost: 0, note: '별도 견적' });
+                }
+
+                if (state.formData.optionDeck) {
+                    optionDetails.push({ name: '데크 시공 (현장 확인 후 견적)', cost: 0, note: '별도 견적' });
+                }
+
+                let freight = 300000;
+                if (['제주특별자치도'].includes(state.formData.regionDo)) freight = 1800000;
+                else if (['경상북도','경상남도','부산광역시','울산광역시','대구광역시'].includes(state.formData.regionDo)) freight = 500000;
+                else if (['전라남도','전북특별자치도','광주광역시'].includes(state.formData.regionDo)) freight = 500000;
+                
+                const labor = 800000 * finalCalc.totalUnits;
+                totalPrice += (freight + labor);
+
+                if (['ladder', 'crane', 'long_carry'].includes(state.formData.liftingType)) {
+                    optionDetails.push({ name: '양중비 (사다리차/크레인/소운반)', cost: 0, note: '별도 견적' });
+                }
+
+                const inputW = Math.round(parseFloat(state.formData.width) * 1000);
+                const inputP = Math.round(parseFloat(state.formData.projection) * 1000);
+
+                const quoteResult = {
+                    totalPrice: totalPrice,
+                    isSwapped: isSwapped,
+                    breakdown: {
+                        totalUnits: finalCalc.totalUnits,
+                        unitW: finalCalc.unitW,
+                        unitP: finalCalc.unitP,
+                        unitPrice: finalCalc.unitPrice,
+                        productTotal: finalCalc.totalBasePrice,
+                        freight,
+                        labor,
+                        options: optionDetails
+                    },
+                    splitInfo: finalCalc.totalUnits > 1 ? `입력하신 사이즈(${inputW}x${inputP})가 최대 규격을 초과하여, 안정적인 내구성을 위해 ${finalCalc.totalUnits}개 모듈로 분할 시공됩니다.` : null
+                };
+
+                await sendEmailToHeadquarters(quoteResult);
+                saveToFirestore(quoteResult);
+                
+                state.result = quoteResult;
+
+            } catch (err) {
+                console.error(err);
+                state.errorMsg = "오류가 발생했습니다: " + err.message;
+            } finally {
+                state.loading = false;
+                render();
+            }
+        }
+
+        async function sendEmailToHeadquarters(quoteData) {
+            if (!emailJsReady || !window.emailjs) {
+                throw new Error("이메일 전송 시스템이 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
+            }
+
+            const templateParams = {
+                to_name: "관리자",
+                from_name: state.formData.phone,
+                message: `
+[테라까사 견적 상세]
+--------------------------------
+■ 고객 정보
+- 연락처: ${state.formData.phone}
+- 지역: ${state.formData.regionDo} ${state.formData.regionSi}
+- 구분: ${state.formData.userType}
+
+■ 시공 정보
+- 시기: ${state.formData.timeline}
+- 입력 사이즈: ${state.formData.width}m x ${state.formData.projection}m
+- 적용 모델: ${state.formData.operationType === 'manual' ? '수동(Manual)' : '전동(Electric)'}
+${quoteData.isSwapped ? '※ 최적 견적을 위해 가로/세로 방향이 변경 적용되었습니다.' : ''}
+
+■ 옵션 및 금액
+- 선택옵션: ${state.formData.optionLed ? 'LED ' : ''}${state.formData.optionGlass !== 'none' ? '글라스도어 ' : ''}${state.formData.optionDeck ? '데크' : ''}
+- 총 견적가: ${quoteData.totalPrice.toLocaleString()}원
+--------------------------------
+                `
+            };
+
+            try {
+                await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+                console.log('SUCCESS Email');
+            } catch (error) {
+                console.error('FAILED Email', error);
+                throw new Error(`이메일 발송 실패: ${error.text || '알 수 없는 오류'}`);
+            }
+        }
+
+        async function saveToFirestore(quoteData) {
+            try {
+                if (!auth.currentUser) return;
+                await addDoc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'terracasa_estimates'), {
+                    customer: {
+                        phone: state.formData.phone,
+                        region: `${state.formData.regionDo} ${state.formData.regionSi}`,
+                        type: state.formData.userType,
+                        timeline: state.formData.timeline
+                    },
+                    specs: {
+                        operation: state.formData.operationType,
+                        width: state.formData.width,
+                        projection: state.formData.projection,
+                        lifting: state.formData.liftingType,
+                        measurementNeed: state.formData.measurementNeed,
+                        isSwapped: quoteData.isSwapped
+                    },
+                    options: {
+                        led: state.formData.optionLed,
+                        glass: state.formData.optionGlass,
+                        deck: state.formData.optionDeck
+                    },
+                    quote: quoteData,
+                    createdAt: serverTimestamp(),
+                    marketingConsent: true,
+                });
+            } catch (e) {
+                console.error("Firestore save failed:", e);
+            }
+        }
+
+        // Initialize App
+        init();
+
+    </script>
+</body>
+</html>
